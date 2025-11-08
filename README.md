@@ -26,24 +26,25 @@ Each query for this project aimed at investigating specific aspects of the data 
 To identify the highest-paying roles, I filtered data analyst positions by average yearly salary and location, focusing on remote jobs. This query highlights the high paying opportunities in the field.
 
 ```sql
-SELECT	
-	job_id,
-	job_title,
-	job_location,
-	job_schedule_type,
-	salary_year_avg,
-	job_posted_date,
+SELECT TOP 10
+    job_id,
+    job_title,
+    job_location,
+    job_schedule_type,
+    salary_year_avg,
+    job_posted_date,
     name AS company_name
 FROM
     job_postings_fact
-LEFT JOIN company_dim ON job_postings_fact.company_id = company_dim.company_id
+LEFT JOIN 
+    company_dim 
+    ON job_postings_fact.company_id = company_dim.company_id
 WHERE
-    job_title_short = 'Data Analyst' AND 
-    job_location = 'Anywhere' AND 
-    salary_year_avg IS NOT NULL
+    job_title_short = 'Data Analyst' 
+    AND job_location = 'Anywhere' 
+    AND salary_year_avg IS NOT NULL
 ORDER BY
-    salary_year_avg DESC
-LIMIT 10;
+    salary_year_avg DESC;
 ```
 Here's the breakdown of the top data analyst jobs in 2023:
 - **Wide Salary Range:** Top 10 paying data analyst roles span from $184,000 to $650,000, indicating significant salary potential in the field.
@@ -57,31 +58,37 @@ Here's the breakdown of the top data analyst jobs in 2023:
 To understand what skills are required for the top-paying jobs, I joined the job postings with the skills data, providing insights into what employers value for high-compensation roles.
 ```sql
 WITH top_paying_jobs AS (
-    SELECT	
+    SELECT TOP 10
         job_id,
         job_title,
         salary_year_avg,
         name AS company_name
     FROM
         job_postings_fact
-    LEFT JOIN company_dim ON job_postings_fact.company_id = company_dim.company_id
+    LEFT JOIN 
+        company_dim 
+        ON job_postings_fact.company_id = company_dim.company_id
     WHERE
-        job_title_short = 'Data Analyst' AND 
-        job_location = 'Anywhere' AND 
-        salary_year_avg IS NOT NULL
+        job_title_short = 'Data Analyst' 
+        AND job_location = 'Anywhere' 
+        AND salary_year_avg IS NOT NULL
     ORDER BY
         salary_year_avg DESC
-    LIMIT 10
 )
 
 SELECT 
     top_paying_jobs.*,
-    skills
-FROM top_paying_jobs
-INNER JOIN skills_job_dim ON top_paying_jobs.job_id = skills_job_dim.job_id
-INNER JOIN skills_dim ON skills_job_dim.skill_id = skills_dim.skill_id
+    skills_dim.skills AS skills
+FROM 
+    top_paying_jobs
+INNER JOIN 
+    skills_job_dim 
+    ON top_paying_jobs.job_id = skills_job_dim.job_id
+INNER JOIN 
+    skills_dim 
+    ON skills_job_dim.skill_id = skills_dim.skill_id
 ORDER BY
-    salary_year_avg DESC;
+    top_paying_jobs.salary_year_avg DESC;
 ```
 Here's the breakdown of the most demanded skills for the top 10 highest paying data analyst jobs in 2023:
 - **SQL** is leading with a bold count of 8.
@@ -97,20 +104,24 @@ Other skills like **R**, **Snowflake**, **Pandas**, and **Excel** show varying d
 This query helped identify the skills most frequently requested in job postings, directing focus to areas with high demand.
 
 ```sql
-SELECT 
-    skills,
+SELECT TOP 5
+    skills_dim.skills AS skills,
     COUNT(skills_job_dim.job_id) AS demand_count
-FROM job_postings_fact
-INNER JOIN skills_job_dim ON job_postings_fact.job_id = skills_job_dim.job_id
-INNER JOIN skills_dim ON skills_job_dim.skill_id = skills_dim.skill_id
+FROM 
+    job_postings_fact
+INNER JOIN 
+    skills_job_dim 
+    ON job_postings_fact.job_id = skills_job_dim.job_id
+INNER JOIN 
+    skills_dim 
+    ON skills_job_dim.skill_id = skills_dim.skill_id
 WHERE
     job_title_short = 'Data Analyst' 
-    AND job_work_from_home = True 
+    AND job_work_from_home = 1   -- Use 1 for TRUE, 0 for FALSE in SQL Server
 GROUP BY
-    skills
+    skills_dim.skills
 ORDER BY
-    demand_count DESC
-LIMIT 5;
+    demand_count DESC;
 ```
 Here's the breakdown of the most demanded skills for data analysts in 2023
 - **SQL** and **Excel** remain fundamental, emphasizing the need for strong foundational skills in data processing and spreadsheet manipulation.
@@ -170,26 +181,61 @@ Here's a breakdown of the results for top paying skills for Data Analysts:
 Combining insights from demand and salary data, this query aimed to pinpoint skills that are both in high demand and have high salaries, offering a strategic focus for skill development.
 
 ```sql
-SELECT 
-    skills_dim.skill_id,
-    skills_dim.skills,
-    COUNT(skills_job_dim.job_id) AS demand_count,
-    ROUND(AVG(job_postings_fact.salary_year_avg), 0) AS avg_salary
-FROM job_postings_fact
-INNER JOIN skills_job_dim ON job_postings_fact.job_id = skills_job_dim.job_id
-INNER JOIN skills_dim ON skills_job_dim.skill_id = skills_dim.skill_id
-WHERE
-    job_title_short = 'Data Analyst'
-    AND salary_year_avg IS NOT NULL
-    AND job_work_from_home = True 
-GROUP BY
-    skills_dim.skill_id
-HAVING
-    COUNT(skills_job_dim.job_id) > 10
+﻿WITH skills_demand AS (
+    SELECT
+        s.skill_id,
+        s.skills AS skills,
+        COUNT(sj.job_id) AS demand_count
+    FROM 
+        job_postings_fact AS j
+    INNER JOIN 
+        skills_job_dim AS sj 
+        ON j.job_id = sj.job_id
+    INNER JOIN 
+        skills_dim AS s 
+        ON sj.skill_id = s.skill_id
+    WHERE
+        j.job_title_short = 'Data Analyst'
+        AND j.salary_year_avg IS NOT NULL
+        AND j.job_work_from_home = 'True'    -- ✅ FIXED: compare as text
+    GROUP BY
+        s.skill_id,
+        s.skills
+), 
+average_salary AS (
+    SELECT 
+        sj.skill_id,
+        ROUND(AVG(TRY_CAST(j.salary_year_avg AS FLOAT)), 0) AS avg_salary
+    FROM 
+        job_postings_fact AS j
+    INNER JOIN 
+        skills_job_dim AS sj 
+        ON j.job_id = sj.job_id
+    INNER JOIN 
+        skills_dim AS s 
+        ON sj.skill_id = s.skill_id
+    WHERE
+        j.job_title_short = 'Data Analyst'
+        AND j.salary_year_avg IS NOT NULL
+        AND j.job_work_from_home = 'True'    
+    GROUP BY
+        sj.skill_id
+)
+SELECT TOP 25
+    sd.skill_id,
+    sd.skills,
+    sd.demand_count,
+    a.avg_salary
+FROM
+    skills_demand AS sd
+INNER JOIN  
+    average_salary AS a 
+    ON sd.skill_id = a.skill_id
+WHERE  
+    sd.demand_count > 10
 ORDER BY
-    avg_salary DESC,
-    demand_count DESC
-LIMIT 25;
+    a.avg_salary DESC,
+    sd.demand_count DESC;
 ```
 
 | Skill ID | Skills     | Demand Count | Average Salary ($) |
